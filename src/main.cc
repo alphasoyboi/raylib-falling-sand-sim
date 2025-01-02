@@ -1,9 +1,10 @@
-/*//
+//
 // Created by tomsmale on 28/12/24.
 //
 
 #include <raylib.h>
 #include "raygui.h"
+#include <memory>
 
 enum class GameState {
   MAIN_MENU,
@@ -16,30 +17,65 @@ enum class PlayState {
   PAUSED,
 };
 
+enum class Particle {
+  VOID,
+  AIR,
+  SAND,
+  DIRT,
+  STONE,
+  WATER,
+  LAVA,
+  COUNT,
+};
+
+Color particleColors[] = {
+    BLANK, // VOID
+    BLACK, // AIR
+    BEIGE, // SAND
+    BROWN, // DIRT
+    GRAY,  // STONE
+    BLUE,  // WATER
+    RED,   // LAVA
+};
+
 class Application {
 public:
-  void InitGraphics() {
+  Application() {
+    // setup raylib
     SetConfigFlags(FLAG_VSYNC_HINT);
     InitWindow(screenWidth, screenHeight, "Falling Sand Simulation");
     SetTargetFPS(60);
-  }
 
-  void Render() {
-    BeginDrawing();
-    ClearBackground(PURPLE);
-    switch (state) {
-      case GameState::MAIN_MENU:
-        DrawMainMenu();
-        break;
-      case GameState::OPTIONS_MENU:
-        break;
-      case GameState::PLAYING:
-        break;
+    // allocate particle array to represent world and pixel array for rendering
+    world = std::make_unique<Particle[]>(worldWidth * worldHeight);
+    pixels = std::make_unique<Color[]>(worldWidth * worldHeight);
+
+    for (int y = 0; y < worldHeight; y++) {
+      for (int x = 0; x < worldWidth; x++) {
+        if (y > worldHeight/2) {
+          world[y * worldWidth + x] = Particle::AIR;
+        }
+        else {
+          world[y * worldWidth + x] = Particle::SAND;
+        }
+        pixels[y * worldWidth + x] = particleColors[static_cast<int>(world[y * worldWidth + x])];
+      }
     }
-    EndDrawing();
+
+    // setup world texture
+    worldImage = {
+        .data = pixels.get(),
+        .width = worldWidth,
+        .height = worldHeight,
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+    };
+    worldTexture = LoadTextureFromImage(worldImage);
+    //UnloadImage(worldImage);
   }
 
-  void CleanupGraphics() {
+  ~Application() {
+    UnloadTexture(worldTexture);
     CloseWindow();
   }
 
@@ -55,24 +91,90 @@ public:
     if (GuiButton((Rectangle){screenWidth*0.335f, screenHeight*0.5f, screenWidth*0.33f, screenHeight*0.1f}, "Options")) {
       state = GameState::OPTIONS_MENU;
     }
+  }
 
+  void UpdateWorldTexture() {
+    for (int y = 0; y < worldHeight; y++) {
+      for (int x = 0; x < worldWidth; x++) {
+        pixels[y*worldWidth + x] = particleColors[static_cast<int>(world[y*worldWidth + x])];
+      }
+    }
+    UpdateTexture(worldTexture, pixels.get());
+  }
+
+  void DrawWorld() {
+    ClearBackground(BLACK);
+
+    for (int i = 0; i < worldWidth * worldHeight; i++) {
+      pixels[i] = particleColors[static_cast<int>(world[i])];
+    }
+
+    // Calculate scaling factor based on window size and framebuffer size
+    float scaleFactorX = (float)GetScreenWidth() / worldWidth;
+    float scaleFactorY = (float)GetScreenHeight() / worldHeight;
+
+    // Determine the smaller scale factor to maintain aspect ratio
+    float scaleFactor = fminf(scaleFactorX, scaleFactorY);
+
+    float scaledWidth = worldWidth * scaleFactor;
+    float scaledHeight = worldHeight * scaleFactor;
+    float offsetX = (GetScreenWidth() - scaledWidth) / 2.0f;
+    float offsetY = (GetScreenHeight() - scaledHeight) / 2.0f;
+
+    DrawTexturePro(
+        worldTexture,
+        (Rectangle){ 0, 0, (float)worldTexture.width, -(float)worldTexture.height }, // Source rectangle (inverted Y)
+        (Rectangle){ offsetX, offsetY, scaledWidth, scaledHeight },                  // Destination rectangle
+        (Vector2){ 0, 0 },                                                           // Origin
+        0.0f,                                                                        // Rotation
+        WHITE                                                                        // Tint
+    );
+  }
+
+  void Render() {
+    BeginDrawing();
+    ClearBackground(PURPLE);
+    switch (state) {
+      case GameState::MAIN_MENU:
+        DrawMainMenu();
+        break;
+      case GameState::OPTIONS_MENU:
+        break;
+      case GameState::PLAYING:
+        UpdateWorldTexture();
+        DrawWorld();
+        break;
+    }
+    DrawFPS(10, 10);
+    EndDrawing();
   }
 
   void Run() {
-    InitGraphics();
-
     while (!WindowShouldClose()) {
       Render();
     }
-
-    CleanupGraphics();
   }
-private:
 
+  static size_t GetIndex(int x, int y, int width) {
+    return y * width + x;
+  }
+
+private:
   int screenWidth = 1280;
   int screenHeight = 720;
+
   int worldWidth = 400;
   int worldHeight = 300;
+  std::unique_ptr<Particle[]> world;
+  std::unique_ptr<Color[]> pixels;
+  Image worldImage = {
+      .data = nullptr,
+      .width = worldWidth,
+      .height = worldHeight,
+      .mipmaps = 1,
+      .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+  };
+  Texture2D worldTexture;
 
   GameState state = GameState::MAIN_MENU;
 };
@@ -83,201 +185,132 @@ int main(int argc, char* argv[]) {
 
   return 0;
 }
-*/
-/*******************************************************************************************
-*
-*   raylib [core] example - window flags
-*
-*   Example originally created with raylib 3.5, last time updated with raylib 3.5
-*
-*   Example licensed under an unmodified zlib/libpng license, which is an OSI-certified,
-*   BSD-like license that allows static linking with closed source software
-*
-*   Copyright (c) 2020-2024 Ramon Santamaria (@raysan5)
-*
-********************************************************************************************/
 
-#include "raylib.h"
+/*
 
-//------------------------------------------------------------------------------------
-// Program main entry point
-//------------------------------------------------------------------------------------
-int main(void)
-{
-    // Initialization
-    //---------------------------------------------------------
-    const int screenWidth = 800;
-    const int screenHeight = 450;
+//
+// Created by Tom Smale on 27/12/2024.
+//
 
-    // Possible window flags
-    /*
-    FLAG_VSYNC_HINT
-    FLAG_FULLSCREEN_MODE    -> not working properly -> wrong scaling!
-    FLAG_WINDOW_RESIZABLE
-    FLAG_WINDOW_UNDECORATED
-    FLAG_WINDOW_TRANSPARENT
-    FLAG_WINDOW_HIDDEN
-    FLAG_WINDOW_MINIMIZED   -> Not supported on window creation
-    FLAG_WINDOW_MAXIMIZED   -> Not supported on window creation
-    FLAG_WINDOW_UNFOCUSED
-    FLAG_WINDOW_TOPMOST
-    FLAG_WINDOW_HIGHDPI     -> errors after minimize-resize, fb size is recalculated
-    FLAG_WINDOW_ALWAYS_RUN
-    FLAG_MSAA_4X_HINT
-    */
+#include <raylib.h>
+#include <cstdlib>
+#include <cmath>
 
-    // Set configuration flags for window creation
-    //SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
-    InitWindow(screenWidth, screenHeight, "raylib [core] example - window flags");
+enum class Particle {
+  VOID,
+  AIR,
+  WATER,
+  SAND,
+  DIRT,
+  STONE,
+  COUNT,
+};
 
-    Vector2 ballPosition = { GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f };
-    Vector2 ballSpeed = { 5.0f, 4.0f };
-    float ballRadius = 20;
+struct Particle {
+  ParticleType type;
+  Color color;
+};
 
-    int framesCounter = 0;
+int main(int argc, char** argv) {
+  // Initialization
+  //--------------------------------------------------------------------------------------
+  int screenWidth = 1280;
+  int screenHeight = 720;
 
-    //SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
-    //----------------------------------------------------------
+  InitWindow(screenWidth, screenHeight, "raylib [textures] example - texture from raw data");
 
+  // Generate a checked texture by code
+  int width = 400;
+  int height = 225;
 
-    // Main game loop
-    while (!WindowShouldClose())    // Detect window close button or ESC key
-    {
-        // Update
-        //-----------------------------------------------------
-        if (IsKeyPressed(KEY_F)) ToggleFullscreen();  // modifies window size when scaling!
+  // Dynamic memory allocation to store pixels data (Color type)
+  Color *pixels = (Color *)malloc(width*height*sizeof(Color));
 
-        if (IsKeyPressed(KEY_R))
-        {
-            if (IsWindowState(FLAG_WINDOW_RESIZABLE)) ClearWindowState(FLAG_WINDOW_RESIZABLE);
-            else SetWindowState(FLAG_WINDOW_RESIZABLE);
-        }
+  Color pixelColor = (Color){255, 0, 0, 255};
+  float hue = 0.0f;
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
 
-        if (IsKeyPressed(KEY_D))
-        {
-            if (IsWindowState(FLAG_WINDOW_UNDECORATED)) ClearWindowState(FLAG_WINDOW_UNDECORATED);
-            else SetWindowState(FLAG_WINDOW_UNDECORATED);
-        }
+      // Convert hue to RGB
+      float r = fabs(hue * 6.0f - 3.0f) - 1.0f;
+      float g = 2.0f - fabs(hue * 6.0f - 2.0f);
+      float b = 2.0f - fabs(hue * 6.0f - 4.0f);
 
-        if (IsKeyPressed(KEY_H))
-        {
-            if (!IsWindowState(FLAG_WINDOW_HIDDEN)) SetWindowState(FLAG_WINDOW_HIDDEN);
+      pixelColor.r = (unsigned char)(fmax(0.0f, fmin(1.0f, r)) * 255.0f);
+      pixelColor.g = (unsigned char)(fmax(0.0f, fmin(1.0f, g)) * 255.0f);
+      pixelColor.b = (unsigned char)(fmax(0.0f, fmin(1.0f, b)) * 255.0f);
 
-            framesCounter = 0;
-        }
+      pixels[y*width + x] = pixelColor;
 
-        if (IsWindowState(FLAG_WINDOW_HIDDEN))
-        {
-            framesCounter++;
-            if (framesCounter >= 240) ClearWindowState(FLAG_WINDOW_HIDDEN); // Show window after 3 seconds
-        }
-
-        if (IsKeyPressed(KEY_N))
-        {
-            if (!IsWindowState(FLAG_WINDOW_MINIMIZED)) MinimizeWindow();
-
-            framesCounter = 0;
-        }
-
-        if (IsWindowState(FLAG_WINDOW_MINIMIZED))
-        {
-            framesCounter++;
-            if (framesCounter >= 240) RestoreWindow(); // Restore window after 3 seconds
-        }
-
-        if (IsKeyPressed(KEY_M))
-        {
-            // NOTE: Requires FLAG_WINDOW_RESIZABLE enabled!
-            if (IsWindowState(FLAG_WINDOW_MAXIMIZED)) RestoreWindow();
-            else MaximizeWindow();
-        }
-
-        if (IsKeyPressed(KEY_U))
-        {
-            if (IsWindowState(FLAG_WINDOW_UNFOCUSED)) ClearWindowState(FLAG_WINDOW_UNFOCUSED);
-            else SetWindowState(FLAG_WINDOW_UNFOCUSED);
-        }
-
-        if (IsKeyPressed(KEY_T))
-        {
-            if (IsWindowState(FLAG_WINDOW_TOPMOST)) ClearWindowState(FLAG_WINDOW_TOPMOST);
-            else SetWindowState(FLAG_WINDOW_TOPMOST);
-        }
-
-        if (IsKeyPressed(KEY_A))
-        {
-            if (IsWindowState(FLAG_WINDOW_ALWAYS_RUN)) ClearWindowState(FLAG_WINDOW_ALWAYS_RUN);
-            else SetWindowState(FLAG_WINDOW_ALWAYS_RUN);
-        }
-
-        if (IsKeyPressed(KEY_V))
-        {
-            if (IsWindowState(FLAG_VSYNC_HINT)) ClearWindowState(FLAG_VSYNC_HINT);
-            else SetWindowState(FLAG_VSYNC_HINT);
-        }
-
-        // Bouncing ball logic
-        ballPosition.x += ballSpeed.x;
-        ballPosition.y += ballSpeed.y;
-        if ((ballPosition.x >= (GetScreenWidth() - ballRadius)) || (ballPosition.x <= ballRadius)) ballSpeed.x *= -1.0f;
-        if ((ballPosition.y >= (GetScreenHeight() - ballRadius)) || (ballPosition.y <= ballRadius)) ballSpeed.y *= -1.0f;
-        //-----------------------------------------------------
-
-        // Draw
-        //-----------------------------------------------------
-        BeginDrawing();
-
-        if (IsWindowState(FLAG_WINDOW_TRANSPARENT)) ClearBackground(BLANK);
-        else ClearBackground(RAYWHITE);
-
-        DrawCircleV(ballPosition, ballRadius, MAROON);
-        DrawRectangleLinesEx((Rectangle) { 0, 0, (float)GetScreenWidth(), (float)GetScreenHeight() }, 4, RAYWHITE);
-
-        DrawCircleV(GetMousePosition(), 10, DARKBLUE);
-
-        DrawFPS(10, 10);
-
-        DrawText(TextFormat("Screen Size: [%i, %i]", GetScreenWidth(), GetScreenHeight()), 40, GetScreenHeight()*0.9, 40, GREEN);
-
-        // Draw window state info
-        DrawText("Following flags can be set after window creation:", 10, 60, 10, GRAY);
-        //if (IsWindowState(FLAG_FULLSCREEN_MODE)) DrawText("[F] FLAG_FULLSCREEN_MODE: on", 10, 80, 10, LIME);
-        //else DrawText("[F] FLAG_FULLSCREEN_MODE: off", 10, 80, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_RESIZABLE)) DrawText("[R] FLAG_WINDOW_RESIZABLE: on", 10, 100, 10, LIME);
-        else DrawText("[R] FLAG_WINDOW_RESIZABLE: off", 10, 100, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_UNDECORATED)) DrawText("[D] FLAG_WINDOW_UNDECORATED: on", 10, 120, 10, LIME);
-        else DrawText("[D] FLAG_WINDOW_UNDECORATED: off", 10, 120, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_HIDDEN)) DrawText("[H] FLAG_WINDOW_HIDDEN: on", 10, 140, 10, LIME);
-        else DrawText("[H] FLAG_WINDOW_HIDDEN: off", 10, 140, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_MINIMIZED)) DrawText("[N] FLAG_WINDOW_MINIMIZED: on", 10, 160, 10, LIME);
-        else DrawText("[N] FLAG_WINDOW_MINIMIZED: off", 10, 160, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_MAXIMIZED)) DrawText("[M] FLAG_WINDOW_MAXIMIZED: on", 10, 180, 10, LIME);
-        else DrawText("[M] FLAG_WINDOW_MAXIMIZED: off", 10, 180, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_UNFOCUSED)) DrawText("[G] FLAG_WINDOW_UNFOCUSED: on", 10, 200, 10, LIME);
-        else DrawText("[U] FLAG_WINDOW_UNFOCUSED: off", 10, 200, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_TOPMOST)) DrawText("[T] FLAG_WINDOW_TOPMOST: on", 10, 220, 10, LIME);
-        else DrawText("[T] FLAG_WINDOW_TOPMOST: off", 10, 220, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_ALWAYS_RUN)) DrawText("[A] FLAG_WINDOW_ALWAYS_RUN: on", 10, 240, 10, LIME);
-        else DrawText("[A] FLAG_WINDOW_ALWAYS_RUN: off", 10, 240, 10, MAROON);
-        if (IsWindowState(FLAG_VSYNC_HINT)) DrawText("[V] FLAG_VSYNC_HINT: on", 10, 260, 10, LIME);
-        else DrawText("[V] FLAG_VSYNC_HINT: off", 10, 260, 10, MAROON);
-
-        DrawText("Following flags can only be set before window creation:", 10, 300, 10, GRAY);
-        if (IsWindowState(FLAG_WINDOW_HIGHDPI)) DrawText("FLAG_WINDOW_HIGHDPI: on", 10, 320, 10, LIME);
-        else DrawText("FLAG_WINDOW_HIGHDPI: off", 10, 320, 10, MAROON);
-        if (IsWindowState(FLAG_WINDOW_TRANSPARENT)) DrawText("FLAG_WINDOW_TRANSPARENT: on", 10, 340, 10, LIME);
-        else DrawText("FLAG_WINDOW_TRANSPARENT: off", 10, 340, 10, MAROON);
-        if (IsWindowState(FLAG_MSAA_4X_HINT)) DrawText("FLAG_MSAA_4X_HINT: on", 10, 360, 10, LIME);
-        else DrawText("FLAG_MSAA_4X_HINT: off", 10, 360, 10, MAROON);
-
-        EndDrawing();
-        //-----------------------------------------------------
+      hue += 0.125f; // Increment hue
+      if (hue > 1.0f) hue = 0.0f; // Reset hue after one full cycle
     }
+  }
 
-    // De-Initialization
-    //---------------------------------------------------------
-    CloseWindow();        // Close window and OpenGL context
-    //----------------------------------------------------------
+  // Load pixels data into an image structure and create texture
+  Image checkedIm = {
+      .data = pixels,             // We can assign pixels directly to data
+      .width = width,
+      .height = height,
+      .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+      .mipmaps = 1
+  };
 
-    return 0;
+  Texture2D checked = LoadTextureFromImage(checkedIm);
+  UnloadImage(checkedIm);         // Unload CPU (RAM) image data (pixels)
+
+  SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
+  //---------------------------------------------------------------------------------------
+
+  // Main game loop
+  while (!WindowShouldClose())    // Detect window close button or ESC key
+  {
+    // Update
+    //----------------------------------------------------------------------------------
+    // TODO: Update your variables here
+    //----------------------------------------------------------------------------------
+
+    // Draw
+    //----------------------------------------------------------------------------------
+    BeginDrawing();
+    ClearBackground(BLACK);
+
+    // Calculate scaling factor based on window size and framebuffer size
+    float scaleFactorX = (float)GetScreenWidth() / width;
+    float scaleFactorY = (float)GetScreenHeight() / height;
+
+    // Determine the smaller scale factor to maintain aspect ratio
+    float scaleFactor = fminf(scaleFactorX, scaleFactorY);
+
+    float scaledWidth = width * scaleFactor;
+    float scaledHeight = height * scaleFactor;
+    float offsetX = (GetScreenWidth() - scaledWidth) / 2.0f;
+    float offsetY = (GetScreenHeight() - scaledHeight) / 2.0f;
+
+    DrawTexturePro(
+        checked,
+        (Rectangle){ 0, 0, (float)checked.width, -(float)checked.height }, // Source rectangle (inverted Y)
+        (Rectangle){ offsetX, offsetY, scaledWidth, scaledHeight },                      // Destination rectangle
+        (Vector2){ 0, 0 },                                                              // Origin
+        0.0f,                                                                           // Rotation
+        WHITE                                                                           // Tint
+    );
+
+    DrawText("CHECKED TEXTURE ", 84, 85, 30, BROWN);
+    DrawText("GENERATED by CODE", 72, 148, 30, BROWN);
+
+    EndDrawing();
+    //----------------------------------------------------------------------------------
+  }
+
+  // De-Initialization
+  //--------------------------------------------------------------------------------------
+  UnloadTexture(checked);     // Texture unloading
+
+  CloseWindow();              // Close window and OpenGL context
+  //--------------------------------------------------------------------------------------
+
+  return 0;
 }
+
+*/

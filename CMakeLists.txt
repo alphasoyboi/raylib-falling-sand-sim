@@ -13,7 +13,8 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 add_definitions(-DRAYGUI_IMPLEMENTATION)
 
 # Define the source files, add the executable, and link raylib
-set(SOURCES src/main.cc)
+set(SOURCES
+        src/main.cc)
 add_executable(${PROJECT_NAME} ${SOURCES})
 target_link_libraries(${PROJECT_NAME} raylib)
 
