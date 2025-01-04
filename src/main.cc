@@ -5,27 +5,46 @@
 #include <raylib.h>
 #include "raygui.h"
 #include <memory>
+#include <iostream>
 
 enum class GameState {
-  MAIN_MENU,
-  OPTIONS_MENU,
-  PLAYING,
+  kMainMenu,
+  kOptionsMenu,
+  kPlaying,
+  kClosing
+
 };
 
 enum class PlayState {
-  RUNNING,
-  PAUSED,
+  kRunning,
+  kPaused,
 };
 
+/*class Particle {
+ public:
+  enum class Type {
+    kVoid,
+    kAir,
+    kSand,
+    kDirt,
+    kStone,
+    kWater,
+    kLava,
+    kCount,
+  };
+ private:
+};*/
+
 enum class Particle {
-  VOID,
-  AIR,
-  SAND,
-  DIRT,
-  STONE,
-  WATER,
-  LAVA,
-  COUNT,
+  kVoid,
+  kAir,
+  kSand,
+  kDirt,
+  kStone,
+  kWater,
+  kLava,
+  kBedrock,
+  kCount,
 };
 
 Color particleColors[] = {
@@ -36,6 +55,11 @@ Color particleColors[] = {
     GRAY,  // STONE
     BLUE,  // WATER
     RED,   // LAVA
+    DARKGRAY, // BEDROCK
+};
+
+class World {
+
 };
 
 class Application {
@@ -48,21 +72,30 @@ public:
 
     // allocate particle array to represent world and pixel array for rendering
     world = std::make_unique<Particle[]>(worldWidth * worldHeight);
-    pixels = std::make_unique<Color[]>(worldWidth * worldHeight);
-
     for (int y = 0; y < worldHeight; y++) {
       for (int x = 0; x < worldWidth; x++) {
-        if (y > worldHeight/2) {
-          world[y * worldWidth + x] = Particle::AIR;
+        if (x == 0 || x == worldWidth - 1 || y == 0 || y == worldHeight - 1) {
+          world[y * worldWidth + x] = Particle::kBedrock;
+        } else if (y < worldHeight / 3 && x < worldWidth / 2) {
+          world[y * worldWidth + x] = Particle::kSand;
+        } else if (y%2 == 0 && x == worldWidth/2) {//x > worldWidth/2-3 && x < worldWidth/2+3) {
+          world[y*worldWidth + x] = Particle::kWater;
         }
         else {
-          world[y * worldWidth + x] = Particle::SAND;
+          world[y*worldWidth + x] = Particle::kAir;
         }
-        pixels[y * worldWidth + x] = particleColors[static_cast<int>(world[y * worldWidth + x])];
       }
     }
 
+    std::cout << static_cast<int>(world[worldWidth-1]) << std::endl;
+
     // setup world texture
+    pixels = std::make_unique<Color[]>(worldWidth * worldHeight);
+    for (int y = 0; y < worldHeight; y++) {
+      for (int x = 0; x < worldWidth; x++) {
+        pixels[y*worldWidth + x] = particleColors[static_cast<int>(world[y*worldWidth + x])];
+      }
+    }
     worldImage = {
         .data = pixels.get(),
         .width = worldWidth,
@@ -86,10 +119,13 @@ public:
     DrawText("Falling Sand Simulation", screenWidth/2 - MeasureText("Falling Sand Simulation", 40)/2, screenHeight*0.125 + 24, 40, RAYWHITE);
     GuiSetStyle(DEFAULT, TEXT_SIZE, 30);
     if (GuiButton((Rectangle){screenWidth*0.335f, screenHeight*0.35f, screenWidth*0.33f, screenHeight*0.1f}, "Start")) {
-      state = GameState::PLAYING;
+      state = GameState::kPlaying;
     }
     if (GuiButton((Rectangle){screenWidth*0.335f, screenHeight*0.5f, screenWidth*0.33f, screenHeight*0.1f}, "Options")) {
-      state = GameState::OPTIONS_MENU;
+      state = GameState::kOptionsMenu;
+    }
+    if (GuiButton((Rectangle){screenWidth*0.335f, screenHeight*0.65f, screenWidth*0.33f, screenHeight*0.1f}, "Quit")) {
+      state = GameState::kClosing;
     }
   }
 
@@ -135,12 +171,12 @@ public:
     BeginDrawing();
     ClearBackground(PURPLE);
     switch (state) {
-      case GameState::MAIN_MENU:
+      case GameState::kMainMenu:
         DrawMainMenu();
         break;
-      case GameState::OPTIONS_MENU:
+      case GameState::kOptionsMenu:
         break;
-      case GameState::PLAYING:
+      case GameState::kPlaying:
         UpdateWorldTexture();
         DrawWorld();
         break;
@@ -149,14 +185,192 @@ public:
     EndDrawing();
   }
 
+  [[nodiscard]] inline int Above     (int pos) const { return pos + worldWidth; }
+  [[nodiscard]] inline int Below     (int pos) const { return pos - worldWidth; }
+  [[nodiscard]] inline int Right     (int pos) const { return pos + 1; }
+  [[nodiscard]] inline int Left      (int pos) const { return pos - 1; }
+  [[nodiscard]] inline int AboveRight(int pos) const { return pos + worldWidth + 1; }
+  [[nodiscard]] inline int AboveLeft (int pos) const { return pos + worldWidth - 1; }
+  [[nodiscard]] inline int BelowRight(int pos) const { return pos - worldWidth + 1; }
+  [[nodiscard]] inline int BelowLeft (int pos) const { return pos - worldWidth - 1; }
+
+  inline void PlaceParticle(int pos, Particle type) {
+    world[pos] = type;
+  }
+
+  inline void SwapParticle(int newPos, Particle newType, int oldPos, Particle oldType) {
+    world[newPos] = newType;
+    world[oldPos] = oldType;
+  }
+
+  void CalculateGravity(int& pos, Particle type, int& fallFactor, int fallDirection, bool calculateSpread = false) {
+    while (fallFactor-- != 0) {
+      int below = Below(pos); // Store the result in a temporary variable
+      if (world[below] == Particle::kAir) {
+        SwapParticle(pos, Particle::kAir, below, type);
+        pos = below;
+        continue;
+      }
+      int belowRight = BelowRight(pos);
+      int belowLeft = BelowLeft(pos);
+      if (fallDirection == 0) {
+        if (world[belowRight] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, belowRight, type);
+          pos = belowRight;
+        } else if (world[belowLeft] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, belowLeft, type);
+          pos = belowLeft;
+        } else {
+          if (calculateSpread) {
+            CalculateSpread(pos, type, 1, fallDirection);
+          }
+        }
+      } else {
+        if (world[belowLeft] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, belowLeft, type);
+          pos = belowLeft;
+        } else if (world[belowRight] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, belowRight, type);
+          pos = belowRight;
+        } else {
+          if (calculateSpread) {
+            CalculateSpread(pos, type, 1, fallDirection);
+          }
+        }
+      }
+    }
+  }
+
+  void CalculateSpread(int& pos, Particle type, int spreadFactor, int spreadDirection) {
+    while (spreadFactor-- != 0) {
+      int right = Right(pos);
+      int left = Left(pos);
+      if (spreadDirection == 0) {
+        if (world[right] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, right, type);
+          pos = right;
+        } else if (world[left] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, left, type);
+          pos = left;
+        }
+      } else {
+        if (world[left] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, left, type);
+          pos = left;
+        } else if (world[right] == Particle::kAir) {
+          SwapParticle(pos, Particle::kAir, right, type);
+          pos = right;
+        }
+      }
+    }
+  }
+
+  void UpdatePowder(int pos, Particle type, int fallFactor, int fallDirection) {
+    CalculateGravity(pos, type, fallFactor, fallDirection);
+  }
+
+  void UpdateLiquid(int pos, Particle type, int fallFactor, int fallDirection) {
+    CalculateGravity(pos, type, fallFactor, fallDirection, true);
+  }
+
+  void UpdateWorld(double elapsedTicks) {
+    if (state != GameState::kPlaying) {
+      return;
+    }
+
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+      Vector2 mousePos = GetMousePosition();
+      Vector2 worldPos = ScreenToWorld(mousePos);
+      if (world[GetIndex(worldPos.x, worldPos.y)] != Particle::kBedrock) {
+        PlaceParticle(GetIndex(worldPos.x, worldPos.y), Particle::kSand);
+      }
+    } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+      Vector2 mousePos = GetMousePosition();
+      Vector2 worldPos = ScreenToWorld(mousePos);
+      if (world[GetIndex(worldPos.x, worldPos.y)] != Particle::kBedrock) {
+        PlaceParticle(GetIndex(worldPos.x, worldPos.y), Particle::kWater);
+      }
+    }
+
+    int fallDirection = GetRandomValue(0, 1);
+    for (int i = worldWidth; i < worldWidth*worldHeight-worldWidth; i++) {
+      switch(world[i]) {
+        case Particle::kSand: {
+          UpdatePowder(i, Particle::kSand, 4, fallDirection);
+          break;
+        }
+        case Particle::kWater: {
+          UpdateLiquid(i, Particle::kWater, 8, fallDirection);
+          break;
+        }
+        default:
+          break;
+      }
+    }
+  }
+
   void Run() {
+    double previous = GetTime();
+    double lag = 0.0;
+    const double ticksMS = 1.0/60.0;
     while (!WindowShouldClose()) {
+      double current = GetTime();
+      double elapsed = current - previous;
+      previous = current;
+      lag += elapsed;
+      if (lag >= ticksMS) {
+        UpdateWorld(elapsed);
+        lag -= ticksMS;
+      }
       Render();
     }
   }
 
-  static size_t GetIndex(int x, int y, int width) {
-    return y * width + x;
+  void BoundsCheck(int& x, int& y) const {
+    x = BoundsCheckX(x);
+    y = BoundsCheckY(y);
+  }
+
+  [[nodiscard]] int BoundsCheckX(int x) const {
+    return x < 0 ? 0 : x >= worldWidth ? worldWidth - 1 : x;
+  }
+
+  [[nodiscard]] int BoundsCheckY(int y) const {
+    return y < 0 ? 0 : y >= worldHeight ? worldHeight - 1 : y;
+  }
+
+  void GetXY(int index, int& x, int& y) const {
+    x = index % worldWidth;
+    y = index / worldWidth;
+  }
+
+  [[nodiscard]] int GetIndex(int x, int y) const {
+    return y*worldWidth + x;
+  }
+
+  Vector2 ScreenToWorld(Vector2 screenPos) {
+    // Calculate scaling factor based on window size and framebuffer size
+    float scaleFactorX = (float)screenWidth / worldWidth;
+    float scaleFactorY = (float)screenHeight / worldHeight;
+
+    // Determine the smaller scale factor to maintain aspect ratio
+    float scaleFactor = fminf(scaleFactorX, scaleFactorY);
+
+    // Calculate the offset
+    float scaledWidth = worldWidth * scaleFactor;
+    float scaledHeight = worldHeight * scaleFactor;
+    float offsetX = (screenWidth - scaledWidth) / 2.0f;
+    float offsetY = (screenHeight - scaledHeight) / 2.0f;
+
+    // Convert screen coordinates to world coordinates
+    float worldX = (screenPos.x - offsetX) / scaleFactor;
+    float worldY = (screenHeight - screenPos.y - offsetY) / scaleFactor; // Adjust for flipped texture
+
+    // Clamp the coordinates to the world bounds
+    worldX = fmaxf(0, fminf(worldX, worldWidth - 1));
+    worldY = fmaxf(0, fminf(worldY, worldHeight - 1));
+
+    return (Vector2){ worldX, worldY };
   }
 
 private:
@@ -176,7 +390,7 @@ private:
   };
   Texture2D worldTexture;
 
-  GameState state = GameState::MAIN_MENU;
+  GameState state = GameState::kMainMenu;
 };
 
 int main(int argc, char* argv[]) {
@@ -185,132 +399,3 @@ int main(int argc, char* argv[]) {
 
   return 0;
 }
-
-/*
-
-//
-// Created by Tom Smale on 27/12/2024.
-//
-
-#include <raylib.h>
-#include <cstdlib>
-#include <cmath>
-
-enum class Particle {
-  VOID,
-  AIR,
-  WATER,
-  SAND,
-  DIRT,
-  STONE,
-  COUNT,
-};
-
-struct Particle {
-  ParticleType type;
-  Color color;
-};
-
-int main(int argc, char** argv) {
-  // Initialization
-  //--------------------------------------------------------------------------------------
-  int screenWidth = 1280;
-  int screenHeight = 720;
-
-  InitWindow(screenWidth, screenHeight, "raylib [textures] example - texture from raw data");
-
-  // Generate a checked texture by code
-  int width = 400;
-  int height = 225;
-
-  // Dynamic memory allocation to store pixels data (Color type)
-  Color *pixels = (Color *)malloc(width*height*sizeof(Color));
-
-  Color pixelColor = (Color){255, 0, 0, 255};
-  float hue = 0.0f;
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < width; x++) {
-
-      // Convert hue to RGB
-      float r = fabs(hue * 6.0f - 3.0f) - 1.0f;
-      float g = 2.0f - fabs(hue * 6.0f - 2.0f);
-      float b = 2.0f - fabs(hue * 6.0f - 4.0f);
-
-      pixelColor.r = (unsigned char)(fmax(0.0f, fmin(1.0f, r)) * 255.0f);
-      pixelColor.g = (unsigned char)(fmax(0.0f, fmin(1.0f, g)) * 255.0f);
-      pixelColor.b = (unsigned char)(fmax(0.0f, fmin(1.0f, b)) * 255.0f);
-
-      pixels[y*width + x] = pixelColor;
-
-      hue += 0.125f; // Increment hue
-      if (hue > 1.0f) hue = 0.0f; // Reset hue after one full cycle
-    }
-  }
-
-  // Load pixels data into an image structure and create texture
-  Image checkedIm = {
-      .data = pixels,             // We can assign pixels directly to data
-      .width = width,
-      .height = height,
-      .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-      .mipmaps = 1
-  };
-
-  Texture2D checked = LoadTextureFromImage(checkedIm);
-  UnloadImage(checkedIm);         // Unload CPU (RAM) image data (pixels)
-
-  SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
-  //---------------------------------------------------------------------------------------
-
-  // Main game loop
-  while (!WindowShouldClose())    // Detect window close button or ESC key
-  {
-    // Update
-    //----------------------------------------------------------------------------------
-    // TODO: Update your variables here
-    //----------------------------------------------------------------------------------
-
-    // Draw
-    //----------------------------------------------------------------------------------
-    BeginDrawing();
-    ClearBackground(BLACK);
-
-    // Calculate scaling factor based on window size and framebuffer size
-    float scaleFactorX = (float)GetScreenWidth() / width;
-    float scaleFactorY = (float)GetScreenHeight() / height;
-
-    // Determine the smaller scale factor to maintain aspect ratio
-    float scaleFactor = fminf(scaleFactorX, scaleFactorY);
-
-    float scaledWidth = width * scaleFactor;
-    float scaledHeight = height * scaleFactor;
-    float offsetX = (GetScreenWidth() - scaledWidth) / 2.0f;
-    float offsetY = (GetScreenHeight() - scaledHeight) / 2.0f;
-
-    DrawTexturePro(
-        checked,
-        (Rectangle){ 0, 0, (float)checked.width, -(float)checked.height }, // Source rectangle (inverted Y)
-        (Rectangle){ offsetX, offsetY, scaledWidth, scaledHeight },                      // Destination rectangle
-        (Vector2){ 0, 0 },                                                              // Origin
-        0.0f,                                                                           // Rotation
-        WHITE                                                                           // Tint
-    );
-
-    DrawText("CHECKED TEXTURE ", 84, 85, 30, BROWN);
-    DrawText("GENERATED by CODE", 72, 148, 30, BROWN);
-
-    EndDrawing();
-    //----------------------------------------------------------------------------------
-  }
-
-  // De-Initialization
-  //--------------------------------------------------------------------------------------
-  UnloadTexture(checked);     // Texture unloading
-
-  CloseWindow();              // Close window and OpenGL context
-  //--------------------------------------------------------------------------------------
-
-  return 0;
-}
-
-*/
