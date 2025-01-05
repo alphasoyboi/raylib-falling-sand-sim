@@ -1,0 +1,44 @@
+{
+  "elements": [
+    {
+      "index": 0,
+      "type": 0,
+      "weight": 0,
+      "viscosity": 0,
+      "color": "#b0e0e6",
+      "name": "air"
+    },
+    {
+      "index": 1,
+      "type": 1,
+      "weight": 3,
+      "viscosity": 1,
+      "color": "#f4a460",
+      "name": "sand"
+    },
+    {
+      "index": 2,
+      "type": 2,
+      "weight": 1,
+      "viscosity": 1,
+      "color": "#a9a9a9",
+      "name": "stone"
+    },
+    {
+      "index": 3,
+      "type": 3,
+      "weight": 5,
+      "viscosity": 1,
+      "color": "#0000ff",
+      "name": "water"
+    },
+    {
+      "index": 4,
+      "type": 2,
+      "weight": 1,
+      "viscosity": 1,
+      "color": "#ff0000",
+      "name": "bedrock"
+    }
+  ]
+}

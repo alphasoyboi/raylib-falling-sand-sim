@@ -9,6 +9,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(raylib 4.0 REQUIRED) # Requires at least version 4.0
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
+# Add json-devel as a dependency
+find_package(nlohmann_json 3.2.0 REQUIRED)
+
 # Define raygui implementation
 add_definitions(-DRAYGUI_IMPLEMENTATION)
 
@@ -17,6 +20,7 @@ set(SOURCES
         src/main.cc)
 add_executable(${PROJECT_NAME} ${SOURCES})
 target_link_libraries(${PROJECT_NAME} raylib)
+target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)
 
 # Checks if OSX and links appropriate frameworks (only required on MacOS)
 if (APPLE)
