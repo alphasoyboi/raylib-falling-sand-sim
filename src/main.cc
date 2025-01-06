@@ -67,7 +67,7 @@ public:
     if (!json.contains("elements") || !json["elements"].is_array()) {
       throw std::runtime_error("Invalid JSON config format: " + filename);
     }
-    if (json["elements"].size() != static_cast<size_t>(Cell::Element::kCount)-1) {
+    if (json["elements"].size() != static_cast<size_t>(Cell::Element::kCount)) {
       throw std::runtime_error("Invalid number of elements in JSON config: " + filename);
     }
 
@@ -109,6 +109,12 @@ private:
   static std::array<std::string, static_cast<size_t>(Element::kCount)> names;
 };
 
+std::array<Cell::Type,  static_cast<size_t>(Cell::Element::kCount)> Cell::types;
+std::array<Color,       static_cast<size_t>(Cell::Element::kCount)> Cell::colors;
+std::array<int,         static_cast<size_t>(Cell::Element::kCount)> Cell::weights;
+std::array<int,         static_cast<size_t>(Cell::Element::kCount)> Cell::viscosity;
+std::array<std::string, static_cast<size_t>(Cell::Element::kCount)> Cell::names;
+
 class AutomataMatrix {
 public:
   AutomataMatrix(int width = 400, int height = 300) : width(width), height(height) {
@@ -121,6 +127,8 @@ public:
       for (int x = 0; x < width; x++) {
         if (x == 0 || x == width - 1 || y == 0 || y == height - 1) {
           cell[y*width + x] = Cell::Element::kBedrock;
+        } else if (x == width/2) {
+          cell[y*width + x] = Cell::Element::kSand;
         } else {
           cell[y*width + x] = Cell::Element::kAir;
         }
@@ -143,6 +151,14 @@ public:
   [[nodiscard]] inline int AboveLeft (const int pos) const { return pos + width - 1; }
   [[nodiscard]] inline int BelowRight(const int pos) const { return pos - width + 1; }
   [[nodiscard]] inline int BelowLeft (const int pos) const { return pos - width - 1; }
+
+    [[nodiscard]] inline Cell::Element GetCell(const int pos) const {
+        return cell[pos];
+    }
+
+    [[nodiscard]] inline Cell::Element GetCell(const int x, const int y) const {
+        return cell[y*width + x];
+    }
 
   void SetCell(const int pos, const Cell::Element element) {
     cell[pos] = element;
@@ -218,6 +234,12 @@ public:
     std::ranges::fill(dirty, 1);
   }
 
+  void GetPixelArray(std::vector<Color>& pixels) {
+    for (int i = 0; i < width*height; i++) {
+      pixels[i] = Cell::GetColor(cell[i]);
+    }
+  }
+
 private:
   int width;
   int height;
@@ -240,42 +262,23 @@ enum class Particle {
 
 class Application {
 public:
-  Application() {
+  Application(const int screenWidth = 1280, const int screenHeight = 720)
+    : screenWidth(screenWidth), screenHeight(screenHeight), world(400, 300) {
     // setup raylib
     SetConfigFlags(FLAG_VSYNC_HINT);
     InitWindow(screenWidth, screenHeight, "Falling Sand Simulation");
     SetTargetFPS(60);
 
-    // allocate particle array to represent world and pixel array for rendering
-    world = std::make_unique<Particle[]>(worldWidth * worldHeight);
-    for (int y = 0; y < worldHeight; y++) {
-      for (int x = 0; x < worldWidth; x++) {
-        if (x == 0 || x == worldWidth - 1 || y == 0 || y == worldHeight - 1) {
-          world[y * worldWidth + x] = Particle::kBedrock;
-        } else if (y < worldHeight / 3 && x < worldWidth / 2) {
-          world[y * worldWidth + x] = Particle::kSand;
-        } else if (y%2 == 0 && x == worldWidth/2) {//x > worldWidth/2-3 && x < worldWidth/2+3) {
-          world[y*worldWidth + x] = Particle::kWater;
-        }
-        else {
-          world[y*worldWidth + x] = Particle::kAir;
-        }
-      }
-    }
+    Cell::LoadElements(RESOURCES_PATH"elements.json");
 
-    // allocate and initialize dirty map
-    dirtyMap = std::make_unique<uint8_t[]>(worldWidth * worldHeight);
-    std::fill_n(dirtyMap.get(), worldWidth * worldHeight, 1);
+    const int worldWidth = world.GetWidth();
+    const int worldHeight = world.GetHeight();
 
     // setup world texture
-    pixels = std::make_unique<Color[]>(worldWidth * worldHeight);
-    for (int y = 0; y < worldHeight; y++) {
-      for (int x = 0; x < worldWidth; x++) {
-        pixels[y*worldWidth + x] = particleColors[static_cast<int>(world[y*worldWidth + x])];
-      }
-    }
+    pixels.resize(worldWidth * worldHeight);
+    world.GetPixelArray(pixels);
     worldImage = {
-        .data = pixels.get(),
+        .data = pixels.data(),
         .width = worldWidth,
         .height = worldHeight,
         .mipmaps = 1,
@@ -307,33 +310,26 @@ public:
     }
   }
 
-  void UpdateWorldTexture() {
-    for (int y = 0; y < worldHeight; y++) {
-      for (int x = 0; x < worldWidth; x++) {
-        pixels[y*worldWidth + x] = particleColors[static_cast<int>(world[y*worldWidth + x])];
-      }
-    }
-    UpdateTexture(worldTexture, pixels.get());
-  }
-
   void DrawWorld() {
     ClearBackground(BLACK);
 
-    for (int i = 0; i < worldWidth * worldHeight; i++) {
-      pixels[i] = particleColors[static_cast<int>(world[i])];
-    }
+    world.GetPixelArray(pixels);
+    UpdateTexture(worldTexture, pixels.data());
+
+    const auto worldWidth = (float)world.GetWidth();
+    const auto worldHeight = (float)world.GetHeight();
 
     // Calculate scaling factor based on window size and framebuffer size
-    float scaleFactorX = (float)GetScreenWidth() / worldWidth;
-    float scaleFactorY = (float)GetScreenHeight() / worldHeight;
+    const float scaleFactorX = screenWidth / worldWidth;
+    const float scaleFactorY = screenHeight / worldHeight;
 
     // Determine the smaller scale factor to maintain aspect ratio
-    float scaleFactor = fminf(scaleFactorX, scaleFactorY);
+    const float scaleFactor = fminf(scaleFactorX, scaleFactorY);
 
-    float scaledWidth = worldWidth * scaleFactor;
-    float scaledHeight = worldHeight * scaleFactor;
-    float offsetX = (GetScreenWidth() - scaledWidth) / 2.0f;
-    float offsetY = (GetScreenHeight() - scaledHeight) / 2.0f;
+    const float scaledWidth = worldWidth * scaleFactor;
+    const float scaledHeight = worldHeight * scaleFactor;
+    const float offsetX = (screenWidth - scaledWidth) / 2.0f;
+    const float offsetY = (screenHeight - scaledHeight) / 2.0f;
 
     DrawTexturePro(
         worldTexture,
@@ -355,170 +351,13 @@ public:
       case GameState::kOptionsMenu:
         break;
       case GameState::kPlaying:
-        UpdateWorldTexture();
         DrawWorld();
+        break;
+      default:
         break;
     }
     DrawFPS(10, 10);
     EndDrawing();
-  }
-
-  [[nodiscard]] inline int Above     (int pos) const { return pos + worldWidth; }
-  [[nodiscard]] inline int Below     (int pos) const { return pos - worldWidth; }
-  [[nodiscard]] inline int Right     (int pos) const { return pos + 1; }
-  [[nodiscard]] inline int Left      (int pos) const { return pos - 1; }
-  [[nodiscard]] inline int AboveRight(int pos) const { return pos + worldWidth + 1; }
-  [[nodiscard]] inline int AboveLeft (int pos) const { return pos + worldWidth - 1; }
-  [[nodiscard]] inline int BelowRight(int pos) const { return pos - worldWidth + 1; }
-  [[nodiscard]] inline int BelowLeft (int pos) const { return pos - worldWidth - 1; }
-
-  inline void SetParticle(int pos, Particle type) {
-    world[pos] = type;
-  }
-
-  inline void SwapParticle(int newPos, Particle newType, int oldPos, Particle oldType) {
-    world[newPos] = newType;
-    world[oldPos] = oldType;
-  }
-
-  void ApplyGravity(int pos, Particle type, int weight, int direction) {
-    int tempPos = pos;
-    while (weight-- != 0) {
-      int below = Below(pos);
-      if (world[below] == Particle::kAir) {
-        SwapParticle(pos, Particle::kAir, below, type);
-        tempPos = below;
-        continue;
-      } else {
-        int belowRight = BelowRight(pos);
-        int belowLeft = BelowLeft(pos);
-        if (direction == 0) {
-          if (world[belowRight] == Particle::kAir) {
-            SwapParticle(pos, Particle::kAir, belowRight, type);
-            pos = belowRight;
-          } else if (world[belowLeft] == Particle::kAir) {
-            SwapParticle(pos, Particle::kAir, belowLeft, type);
-            pos = belowLeft;
-          }
-        } else {
-          if (world[belowLeft] == Particle::kAir) {
-            SwapParticle(pos, Particle::kAir, belowLeft, type);
-            pos = belowLeft;
-          } else if (world[belowRight] == Particle::kAir) {
-            SwapParticle(pos, Particle::kAir, belowRight, type);
-            pos = belowRight;
-          }
-        }
-      }
-    }
-  }
-
-
-
-  void CalculateGravity(int& pos, Particle type, int& fallFactor, int fallDirection, bool calculateSpread = false) {
-    while (fallFactor-- != 0) {
-      int below = Below(pos); // Store the result in a temporary variable
-      if (world[below] == Particle::kAir) {
-        SwapParticle(pos, Particle::kAir, below, type);
-        pos = below;
-        continue;
-      }
-      int belowRight = BelowRight(pos);
-      int belowLeft = BelowLeft(pos);
-      if (fallDirection == 0) {
-        if (world[belowRight] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, belowRight, type);
-          pos = belowRight;
-        } else if (world[belowLeft] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, belowLeft, type);
-          pos = belowLeft;
-        } else {
-          if (calculateSpread) {
-            CalculateSpread(pos, type, 1, fallDirection);
-          }
-        }
-      } else {
-        if (world[belowLeft] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, belowLeft, type);
-          pos = belowLeft;
-        } else if (world[belowRight] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, belowRight, type);
-          pos = belowRight;
-        } else {
-          if (calculateSpread) {
-            CalculateSpread(pos, type, 1, fallDirection);
-          }
-        }
-      }
-    }
-  }
-
-  void CalculateSpread(int& pos, Particle type, int spreadFactor, int spreadDirection) {
-    while (spreadFactor-- != 0) {
-      int right = Right(pos);
-      int left = Left(pos);
-      if (spreadDirection == 0) {
-        if (world[right] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, right, type);
-          pos = right;
-        } else if (world[left] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, left, type);
-          pos = left;
-        }
-      } else {
-        if (world[left] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, left, type);
-          pos = left;
-        } else if (world[right] == Particle::kAir) {
-          SwapParticle(pos, Particle::kAir, right, type);
-          pos = right;
-        }
-      }
-    }
-  }
-
-  void UpdatePowder(int pos, Particle type, int fallFactor, int fallDirection) {
-    CalculateGravity(pos, type, fallFactor, fallDirection);
-  }
-
-  void UpdateLiquid(int pos, Particle type, int fallFactor, int fallDirection) {
-    CalculateGravity(pos, type, fallFactor, fallDirection, true);
-  }
-
-  void UpdateWorld(double elapsedTicks) {
-    if (state != GameState::kPlaying) {
-      return;
-    }
-
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-      Vector2 mousePos = GetMousePosition();
-      Vector2 worldPos = ScreenToWorld(mousePos);
-      if (world[GetIndex(worldPos.x, worldPos.y)] != Particle::kBedrock) {
-        SetParticle(GetIndex(worldPos.x, worldPos.y), Particle::kSand);
-      }
-    } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-      Vector2 mousePos = GetMousePosition();
-      Vector2 worldPos = ScreenToWorld(mousePos);
-      if (world[GetIndex(worldPos.x, worldPos.y)] != Particle::kBedrock) {
-        SetParticle(GetIndex(worldPos.x, worldPos.y), Particle::kWater);
-      }
-    }
-
-    int fallDirection = GetRandomValue(0, 1);
-    for (int i = worldWidth; i < worldWidth*worldHeight-worldWidth; i++) {
-      switch(world[i]) {
-        case Particle::kSand: {
-          UpdatePowder(i, Particle::kSand, 4, fallDirection);
-          break;
-        }
-        case Particle::kWater: {
-          UpdateLiquid(i, Particle::kWater, 8, fallDirection);
-          break;
-        }
-        default:
-          break;
-      }
-    }
   }
 
   void Run() {
@@ -531,48 +370,45 @@ public:
       previous = current;
       lag += elapsed;
       if (lag >= ticksMS) {
-        UpdateWorld(elapsed);
+        if (state == GameState::kPlaying) {
+          if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            Vector2 mousePos = GetMousePosition();
+            Vector2 worldPos = ScreenToWorld(mousePos);
+            if (world.GetCell((int)worldPos.x, (int)worldPos.y) == Cell::Element::kAir) {
+              world.SetCell((int)worldPos.x, (int)worldPos.y, Cell::Element::kSand);
+            }
+          } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+            Vector2 mousePos = GetMousePosition();
+            Vector2 worldPos = ScreenToWorld(mousePos);
+            if (world.GetCell((int)worldPos.x, (int)worldPos.y) == Cell::Element::kAir) {
+              world.SetCell((int)worldPos.x, (int)worldPos.y, Cell::Element::kWater);
+            }
+          }
+
+          world.Update();
+        }
         lag -= ticksMS;
       }
       Render();
     }
   }
 
-  void BoundsCheck(int& x, int& y) const {
-    x = BoundsCheckX(x);
-    y = BoundsCheckY(y);
-  }
+  [[nodiscard]] Vector2 ScreenToWorld(const Vector2 screenPos) const {
+    const auto worldWidth  = static_cast<float>(world.GetWidth());
+    const auto worldHeight = static_cast<float>(world.GetHeight());
 
-  [[nodiscard]] int BoundsCheckX(int x) const {
-    return x < 0 ? 0 : x >= worldWidth ? worldWidth - 1 : x;
-  }
-
-  [[nodiscard]] int BoundsCheckY(int y) const {
-    return y < 0 ? 0 : y >= worldHeight ? worldHeight - 1 : y;
-  }
-
-  void GetXY(int index, int& x, int& y) const {
-    x = index % worldWidth;
-    y = index / worldWidth;
-  }
-
-  [[nodiscard]] int GetIndex(int x, int y) const {
-    return y*worldWidth + x;
-  }
-
-  Vector2 ScreenToWorld(Vector2 screenPos) {
     // Calculate scaling factor based on window size and framebuffer size
-    float scaleFactorX = (float)screenWidth / worldWidth;
-    float scaleFactorY = (float)screenHeight / worldHeight;
+    const float scaleFactorX = screenWidth / worldWidth;
+    const float scaleFactorY = screenHeight / worldHeight;
 
     // Determine the smaller scale factor to maintain aspect ratio
-    float scaleFactor = fminf(scaleFactorX, scaleFactorY);
+    const float scaleFactor = fminf(scaleFactorX, scaleFactorY);
 
     // Calculate the offset
-    float scaledWidth = worldWidth * scaleFactor;
-    float scaledHeight = worldHeight * scaleFactor;
-    float offsetX = (screenWidth - scaledWidth) / 2.0f;
-    float offsetY = (screenHeight - scaledHeight) / 2.0f;
+    const float scaledWidth = worldWidth * scaleFactor;
+    const float scaledHeight = worldHeight * scaleFactor;
+    const float offsetX = (screenWidth - scaledWidth) / 2.0f;
+    const float offsetY = (screenHeight - scaledHeight) / 2.0f;
 
     // Convert screen coordinates to world coordinates
     float worldX = (screenPos.x - offsetX) / scaleFactor;
@@ -580,34 +416,26 @@ public:
 
     // Clamp the coordinates to the world bounds
     worldX = fmaxf(0, fminf(worldX, worldWidth - 1));
-    worldY = fmaxf(0, fminf(worldY, worldHeight - 1));
+    worldY = fmaxf(0, fminf(worldY, worldWidth - 1));
 
     return (Vector2){ worldX, worldY };
   }
 
 private:
+  GameState state = GameState::kMainMenu;
+
   int screenWidth = 1280;
   int screenHeight = 720;
 
-  int worldWidth = 400;
-  int worldHeight = 300;
-  std::unique_ptr<Particle[]> world;
-  std::unique_ptr<uint8_t[]> dirtyMap;
-  std::unique_ptr<Color[]> pixels;
-  Image worldImage = {
-      .data = nullptr,
-      .width = worldWidth,
-      .height = worldHeight,
-      .mipmaps = 1,
-      .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-  };
-  Texture2D worldTexture;
+  AutomataMatrix world;
 
-  GameState state = GameState::kMainMenu;
+  std::vector<Color> pixels;
+  Image worldImage;
+  Texture2D worldTexture;
 };
 
 int main(int argc, char* argv[]) {
-  Application app;
+  Application app(1920, 1080);
   app.Run();
 
   return 0;

@@ -11,7 +11,7 @@
     {
       "index": 1,
       "type": 1,
-      "weight": 3,
+      "weight": 4,
       "viscosity": 1,
       "color": "#f4a460",
       "name": "sand"
@@ -28,7 +28,7 @@
       "index": 3,
       "type": 3,
       "weight": 5,
-      "viscosity": 1,
+      "viscosity": 5,
       "color": "#0000ff",
       "name": "water"
     },

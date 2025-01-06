@@ -8,12 +8,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Add raylib as a dependency
 find_package(raylib 4.0 REQUIRED) # Requires at least version 4.0
 include_directories(${CMAKE_SOURCE_DIR}/include)
+# Define raygui implementation
+add_definitions(-DRAYGUI_IMPLEMENTATION)
 
 # Add json-devel as a dependency
 find_package(nlohmann_json 3.2.0 REQUIRED)
 
-# Define raygui implementation
-add_definitions(-DRAYGUI_IMPLEMENTATION)
+set(${CMAKE_SOURCE_DIR}/resources)
+add_definitions(-DRESOURCES_PATH=\"${CMAKE_SOURCE_DIR}/resources/\")
 
 # Define the source files, add the executable, and link raylib
 set(SOURCES
