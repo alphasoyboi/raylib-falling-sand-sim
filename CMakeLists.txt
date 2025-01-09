@@ -19,7 +19,9 @@ add_definitions(-DRESOURCES_PATH=\"${CMAKE_SOURCE_DIR}/resources/\")
 
 # Define the source files, add the executable, and link raylib
 set(SOURCES
-        src/main.cc)
+        src/main.cc
+        src/application.cc
+        src/automata_matrix.cc)
 add_executable(${PROJECT_NAME} ${SOURCES})
 target_link_libraries(${PROJECT_NAME} raylib)
 target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json)

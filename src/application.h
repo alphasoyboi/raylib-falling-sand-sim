@@ -5,29 +5,50 @@
 #ifndef RAYLIB_SAND_SIM_SRC_APPLICATION_H_
 #define RAYLIB_SAND_SIM_SRC_APPLICATION_H_
 
+#include "automata_matrix.h"
+#include <raylib.h>
+
 class Application {
  public:
+  enum class State {
+    kMainMenu,
+    kOptionsMenu,
+    kPlaying,
+    kClosing,
+  };
 
+  enum class PlayState {
+    kRunning,
+    kPaused,
+    kStopped,
+  };
+
+  Application(int screenWidth = 1280, int screenHeight = 720);
+  ~Application();
+
+  void DrawMainMenu();
+  void DrawWorld();
+  void Render();
+  void Run();
+  [[nodiscard]] Vector2 ScreenToWorld(const Vector2 screenPos) const;
 
  private:
+  State state = State::kMainMenu;
+  PlayState playState = PlayState::kStopped;
+
+  Shader shader;
+
   int screenWidth = 1280;
   int screenHeight = 720;
 
-  int worldWidth = 400;
-  int worldHeight = 300;
-  std::unique_ptr<Particle[]> world;
-  std::unique_ptr<Color[]> pixels;
-  Image worldImage = {
-      .data = nullptr,
-      .width = worldWidth,
-      .height = worldHeight,
-      .mipmaps = 1,
-      .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-  };
+  AutomataMatrix world;
+
+  std::vector<Color> pixels;
+  Image worldImage;
   Texture2D worldTexture;
 
-  GameState state = GameState::MAIN_MENU;
-
+  Image colorTableImage;
+  Texture colorTableTexture;
 };
 
 #endif //RAYLIB_SAND_SIM_SRC_APPLICATION_H_

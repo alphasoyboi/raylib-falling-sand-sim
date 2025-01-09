@@ -27,8 +27,8 @@
     {
       "index": 3,
       "type": 3,
-      "weight": 5,
-      "viscosity": 5,
+      "weight": 8,
+      "viscosity": 8,
       "color": "#0000ff",
       "name": "water"
     },
